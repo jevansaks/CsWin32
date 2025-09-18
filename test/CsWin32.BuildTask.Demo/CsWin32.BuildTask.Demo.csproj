@@ -1,0 +1,28 @@
+&lt;Project Sdk="Microsoft.NET.Sdk"&gt;
+
+  &lt;PropertyGroup&gt;
+    &lt;TargetFramework&gt;net8.0&lt;/TargetFramework&gt;
+    &lt;OutputType&gt;Exe&lt;/OutputType&gt;
+    &lt;AllowUnsafeBlocks&gt;true&lt;/AllowUnsafeBlocks&gt;
+    &lt;CsWin32GenerateAtBuild&gt;true&lt;/CsWin32GenerateAtBuild&gt;
+  &lt;/PropertyGroup&gt;
+
+  &lt;ItemGroup&gt;
+    &lt;PackageReference Include="Microsoft.Windows.SDK.Win32Metadata" GeneratePathProperty="true" PrivateAssets="none" /&gt;
+    &lt;PackageReference Include="Microsoft.Windows.SDK.Win32Docs" GeneratePathProperty="true" PrivateAssets="none" /&gt;
+    &lt;PackageReference Include="System.Memory" /&gt;
+  &lt;/ItemGroup&gt;
+
+  &lt;ItemGroup&gt;
+    &lt;CsWin32NativeMethodsTxt Include="NativeMethods.txt" /&gt;
+    &lt;CsWin32NativeMethodsJson Include="NativeMethods.json" Condition="Exists('NativeMethods.json')" /&gt;
+    &lt;CsWin32MetadataPath Include="$(PkgMicrosoft_Windows_SDK_Win32Metadata)\content\Windows.Win32.winmd" /&gt;
+  &lt;/ItemGroup&gt;
+
+  &lt;ItemGroup&gt;
+    &lt;ProjectReference Include="..\..\src\Microsoft.Windows.CsWin32\Microsoft.Windows.CsWin32.csproj" /&gt;
+  &lt;/ItemGroup&gt;
+
+  &lt;Import Project="..\..\src\Microsoft.Windows.CsWin32\BuildTasks\CsWin32.targets" /&gt;
+
+&lt;/Project&gt;
