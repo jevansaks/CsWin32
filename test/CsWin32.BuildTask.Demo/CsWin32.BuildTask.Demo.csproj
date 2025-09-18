@@ -19,10 +19,7 @@
     &lt;CsWin32MetadataPath Include="$(PkgMicrosoft_Windows_SDK_Win32Metadata)\content\Windows.Win32.winmd" /&gt;
   &lt;/ItemGroup&gt;
 
-  &lt;ItemGroup&gt;
-    &lt;ProjectReference Include="..\..\src\Microsoft.Windows.CsWin32\Microsoft.Windows.CsWin32.csproj" /&gt;
-  &lt;/ItemGroup&gt;
-
-  &lt;Import Project="..\..\src\Microsoft.Windows.CsWin32\BuildTasks\CsWin32.targets" /&gt;
+  &lt;!-- For now, comment out the import until the tool is built and packaged properly --&gt;
+  &lt;!-- &lt;Import Project="..\..\src\Microsoft.Windows.CsWin32\BuildTasks\CsWin32.targets" /&gt; --&gt;
 
 &lt;/Project&gt;

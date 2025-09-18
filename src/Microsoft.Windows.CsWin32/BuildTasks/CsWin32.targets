@@ -22,6 +22,12 @@
     <CsWin32OutputPath Condition="'$(CsWin32OutputPath)' == ''">$(IntermediateOutputPath)Generated\</CsWin32OutputPath>
   </PropertyGroup>
 
+  <!-- Locate the tool -->
+  <PropertyGroup>
+    <_CsWin32GeneratorToolPath>$(MSBuildThisFileDirectory)..\..\..\CsWin32Generator\bin\$(Configuration)\net8.0\CsWin32Generator.exe</_CsWin32GeneratorToolPath>
+    <_CsWin32GeneratorToolPath Condition="!Exists('$(_CsWin32GeneratorToolPath)')">$(MSBuildThisFileDirectory)CsWin32Generator.exe</_CsWin32GeneratorToolPath>
+  </PropertyGroup>
+
   <UsingTask TaskName="CsWin32CodeGeneratorTask" AssemblyFile="$(MSBuildThisFileDirectory)..\Microsoft.Windows.CsWin32.dll" />
 
   <Target Name="GenerateCsWin32Code" 
@@ -34,6 +40,10 @@
       <_CsWin32DocPaths Include="$(PkgMicrosoft_Windows_SDK_Win32Docs)\content\Win32.dll" Condition="'$(PkgMicrosoft_Windows_SDK_Win32Docs)' != ''" />
     </ItemGroup>
 
+    <!-- Ensure the tool exists -->
+    <Error Text="CsWin32Generator tool not found at: $(_CsWin32GeneratorToolPath)" 
+           Condition="!Exists('$(_CsWin32GeneratorToolPath)')" />
+
     <CsWin32CodeGeneratorTask 
       NativeMethodsTxt="%(CsWin32NativeMethodsTxt.FullPath)"
       NativeMethodsJson="%(CsWin32NativeMethodsJson.FullPath)"
@@ -44,7 +54,8 @@
       AllowUnsafeBlocks="$(AllowUnsafeBlocks)"
       TargetFramework="$(TargetFramework)"
       Platform="$(PlatformTarget)"
-      References="@(ReferencePath)">
+      References="@(ReferencePath)"
+      ToolPath="$(_CsWin32GeneratorToolPath)">
       
       <Output TaskParameter="GeneratedFiles" ItemName="CsWin32GeneratedFiles" />
     </CsWin32CodeGeneratorTask>

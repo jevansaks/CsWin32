@@ -1,0 +1,461 @@
+using System.CommandLine;
+using System.Text;
+using System.Text.Json;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.Windows.CsWin32;
+
+namespace CsWin32Generator;
+
+internal class Program
+{
+    private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
+    {
+        AllowTrailingCommas = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+
+    private static readonly char[] ZeroWhiteSpace = new char[]
+    {
+        '\uFEFF', // ZERO WIDTH NO-BREAK SPACE (U+FEFF)
+        '\u200B', // ZERO WIDTH SPACE (U+200B)
+    };
+
+    static async Task<int> Main(string[] args)
+    {
+        var nativeMethodsTxtOption = new Option<FileInfo>(
+            name: "--native-methods-txt",
+            description: "Path to the NativeMethods.txt file containing API names to generate.")
+        {
+            IsRequired = true
+        };
+
+        var nativeMethodsJsonOption = new Option<FileInfo?>(
+            name: "--native-methods-json",
+            description: "Path to the NativeMethods.json file containing generation options.");
+
+        var metadataPathsOption = new Option<FileInfo[]>(
+            name: "--metadata-paths",
+            description: "Paths to Windows metadata files (.winmd).")
+        {
+            IsRequired = true,
+            AllowMultipleArgumentsPerToken = true
+        };
+
+        var docPathsOption = new Option<FileInfo[]?>(
+            name: "--doc-paths",
+            description: "Paths to documentation files.")
+        {
+            AllowMultipleArgumentsPerToken = true
+        };
+
+        var appLocalAllowedLibrariesOption = new Option<FileInfo[]?>(
+            name: "--app-local-allowed-libraries",
+            description: "Paths to app-local allowed libraries.")
+        {
+            AllowMultipleArgumentsPerToken = true
+        };
+
+        var outputPathOption = new Option<DirectoryInfo>(
+            name: "--output-path",
+            description: "Output directory where generated files will be written.")
+        {
+            IsRequired = true
+        };
+
+        var allowUnsafeBlocksOption = new Option<bool>(
+            name: "--allow-unsafe-blocks",
+            getDefaultValue: () => true,
+            description: "Whether unsafe code is allowed.");
+
+        var targetFrameworkOption = new Option<string?>(
+            name: "--target-framework",
+            description: "Target framework version (affects available features).");
+
+        var platformOption = new Option<string>(
+            name: "--platform",
+            getDefaultValue: () => "AnyCPU",
+            description: "Target platform (e.g., x86, x64, AnyCPU).");
+
+        var referencesOption = new Option<FileInfo[]?>(
+            name: "--references",
+            description: "Additional references to be included in the compilation context.")
+        {
+            AllowMultipleArgumentsPerToken = true
+        };
+
+        var rootCommand = new RootCommand("CsWin32 Code Generator - Generates P/Invoke methods and supporting types from Windows metadata.")
+        {
+            nativeMethodsTxtOption,
+            nativeMethodsJsonOption,
+            metadataPathsOption,
+            docPathsOption,
+            appLocalAllowedLibrariesOption,
+            outputPathOption,
+            allowUnsafeBlocksOption,
+            targetFrameworkOption,
+            platformOption,
+            referencesOption
+        };
+
+        rootCommand.SetHandler(async (nativeMethodsTxt, nativeMethodsJson, metadataPaths, docPaths, appLocalAllowedLibraries, outputPath, allowUnsafeBlocks, targetFramework, platform, references) =>
+        {
+            try
+            {
+                var result = await GenerateCode(
+                    nativeMethodsTxt,
+                    nativeMethodsJson,
+                    metadataPaths,
+                    docPaths,
+                    appLocalAllowedLibraries,
+                    outputPath,
+                    allowUnsafeBlocks,
+                    targetFramework,
+                    platform,
+                    references);
+
+                Environment.ExitCode = result ? 0 : 1;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Error: {ex.Message}");
+                if (ex.InnerException != null)
+                {
+                    Console.Error.WriteLine($"Inner exception: {ex.InnerException.Message}");
+                }
+                Environment.ExitCode = 1;
+            }
+        }, nativeMethodsTxtOption, nativeMethodsJsonOption, metadataPathsOption, docPathsOption, appLocalAllowedLibrariesOption, outputPathOption, allowUnsafeBlocksOption, targetFrameworkOption, platformOption, referencesOption);
+
+        return await rootCommand.InvokeAsync(args);
+    }
+
+    private static async Task<bool> GenerateCode(
+        FileInfo nativeMethodsTxt,
+        FileInfo? nativeMethodsJson,
+        FileInfo[] metadataPaths,
+        FileInfo[]? docPaths,
+        FileInfo[]? appLocalAllowedLibraries,
+        DirectoryInfo outputPath,
+        bool allowUnsafeBlocks,
+        string? targetFramework,
+        string platform,
+        FileInfo[]? references)
+    {
+        Console.WriteLine("Starting CsWin32 code generation...");
+
+        if (!nativeMethodsTxt.Exists)
+        {
+            Console.Error.WriteLine($"NativeMethods.txt file not found: {nativeMethodsTxt.FullName}");
+            return false;
+        }
+
+        if (metadataPaths.Length == 0)
+        {
+            Console.Error.WriteLine("At least one metadata path must be provided.");
+            return false;
+        }
+
+        // Load generator options from NativeMethods.json if provided
+        GeneratorOptions options = LoadGeneratorOptions(nativeMethodsJson);
+        Console.WriteLine($"Loaded generator options. AllowMarshaling: {options.AllowMarshaling}, ClassName: {options.ClassName}");
+
+        // Validate metadata files exist
+        foreach (var metadataPath in metadataPaths)
+        {
+            if (!metadataPath.Exists)
+            {
+                Console.Error.WriteLine($"Metadata file not found: {metadataPath.FullName}");
+                return false;
+            }
+        }
+
+        // Create compilation context
+        CSharpCompilation? compilation = CreateCompilation(allowUnsafeBlocks, platform, references);
+        CSharpParseOptions? parseOptions = CreateParseOptions(targetFramework);
+        Console.WriteLine($"Created compilation context with platform: {platform}, language version: {parseOptions?.LanguageVersion}");
+
+        // Load docs if available
+        Docs? docs = LoadDocs(docPaths);
+        if (docs != null)
+        {
+            Console.WriteLine("Loaded API documentation.");
+        }
+
+        // Process app-local libraries
+        IEnumerable<string> appLocalLibrariesNames = appLocalAllowedLibraries?.Select(f => f.Name) ?? Array.Empty<string>();
+
+        // Create generators for all metadata paths
+        var generators = new List<Generator>();
+        foreach (var metadataPath in metadataPaths)
+        {
+            Console.WriteLine($"Creating generator for: {metadataPath.Name}");
+            generators.Add(new Generator(metadataPath.FullName, docs, appLocalLibrariesNames, options, compilation, parseOptions));
+        }
+
+        // Create super generator
+        using SuperGenerator superGenerator = generators.Count == 1 
+            ? SuperGenerator.Combine(generators[0])
+            : SuperGenerator.Combine(generators.ToArray());
+
+        Console.WriteLine($"Created super generator with {generators.Count} generator(s).");
+
+        // Process NativeMethods.txt file
+        if (!ProcessNativeMethodsFile(superGenerator, nativeMethodsTxt))
+        {
+            return false;
+        }
+
+        // Generate compilation units and write to files
+        if (!GenerateAndWriteFiles(superGenerator, outputPath))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static GeneratorOptions LoadGeneratorOptions(FileInfo? nativeMethodsJson)
+    {
+        if (nativeMethodsJson?.Exists != true)
+        {
+            return new GeneratorOptions();
+        }
+
+        try
+        {
+            string optionsJson = File.ReadAllText(nativeMethodsJson.FullName);
+            return JsonSerializer.Deserialize<GeneratorOptions>(optionsJson, JsonOptions);
+        }
+        catch (JsonException ex)
+        {
+            Console.Error.WriteLine($"Failed to parse NativeMethods.json: {ex.Message}");
+            return new GeneratorOptions();
+        }
+    }
+
+    private static CSharpCompilation? CreateCompilation(bool allowUnsafeBlocks, string platform, FileInfo[]? references)
+    {
+        var metadataReferences = new List<MetadataReference>();
+
+        // Add basic framework references
+        string? runtimePath = Path.GetDirectoryName(typeof(object).Assembly.Location);
+        if (runtimePath != null)
+        {
+            string systemRuntimePath = Path.Combine(runtimePath, "System.Runtime.dll");
+            if (File.Exists(systemRuntimePath))
+            {
+                metadataReferences.Add(MetadataReference.CreateFromFile(systemRuntimePath));
+            }
+
+            string netstandardPath = Path.Combine(runtimePath, "netstandard.dll");
+            if (File.Exists(netstandardPath))
+            {
+                metadataReferences.Add(MetadataReference.CreateFromFile(netstandardPath));
+            }
+
+            string systemMemoryPath = Path.Combine(runtimePath, "System.Memory.dll");
+            if (File.Exists(systemMemoryPath))
+            {
+                metadataReferences.Add(MetadataReference.CreateFromFile(systemMemoryPath));
+            }
+        }
+
+        // Add additional references if provided
+        if (references != null)
+        {
+            foreach (var reference in references)
+            {
+                if (reference.Exists)
+                {
+                    metadataReferences.Add(MetadataReference.CreateFromFile(reference.FullName));
+                }
+            }
+        }
+
+        Microsoft.CodeAnalysis.Platform compilationPlatform = platform switch
+        {
+            "x86" => Microsoft.CodeAnalysis.Platform.X86,
+            "x64" => Microsoft.CodeAnalysis.Platform.X64,
+            "arm64" => Microsoft.CodeAnalysis.Platform.Arm64,
+            _ => Microsoft.CodeAnalysis.Platform.AnyCpu,
+        };
+
+        var compilationOptions = new CSharpCompilationOptions(
+            outputKind: OutputKind.DynamicallyLinkedLibrary,
+            allowUnsafe: allowUnsafeBlocks,
+            platform: compilationPlatform);
+
+        return CSharpCompilation.Create(
+            assemblyName: "GeneratedCode",
+            syntaxTrees: null,
+            references: metadataReferences,
+            options: compilationOptions);
+    }
+
+    private static CSharpParseOptions? CreateParseOptions(string? targetFramework)
+    {
+        // Determine language version based on target framework
+        LanguageVersion languageVersion = targetFramework switch
+        {
+            var tf when tf?.StartsWith("net9.0") == true => LanguageVersion.Latest,
+            var tf when tf?.StartsWith("net8.0") == true => LanguageVersion.Latest,
+            var tf when tf?.StartsWith("net7.0") == true => LanguageVersion.Latest,
+            var tf when tf?.StartsWith("net6.0") == true => LanguageVersion.CSharp9,
+            _ => LanguageVersion.CSharp9,
+        };
+
+        return new CSharpParseOptions(languageVersion: languageVersion);
+    }
+
+    private static Docs? LoadDocs(FileInfo[]? docPaths)
+    {
+        if (docPaths?.Length > 0)
+        {
+            var docsList = new List<Docs>();
+            foreach (var docPath in docPaths)
+            {
+                try
+                {
+                    if (docPath.Exists)
+                    {
+                        docsList.Add(Docs.Get(docPath.FullName));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Warning: Failed to load documentation from {docPath.FullName}: {ex.Message}");
+                }
+            }
+
+            return docsList.Count > 0 ? Docs.Merge(docsList) : null;
+        }
+
+        return null;
+    }
+
+    private static bool ProcessNativeMethodsFile(SuperGenerator superGenerator, FileInfo nativeMethodsTxt)
+    {
+        try
+        {
+            var lines = File.ReadAllLines(nativeMethodsTxt.FullName);
+            Console.WriteLine($"Processing {lines.Length} lines from {nativeMethodsTxt.Name}");
+            
+            int processedCount = 0;
+            int skippedCount = 0;
+            int errorCount = 0;
+
+            foreach (string line in lines)
+            {
+                string name = line.Trim().Trim(ZeroWhiteSpace);
+                if (string.IsNullOrWhiteSpace(name) || name.StartsWith("//", StringComparison.InvariantCulture))
+                {
+                    skippedCount++;
+                    continue;
+                }
+
+                try
+                {
+                    if (Generator.GetBannedAPIs(superGenerator.Generators.First().Value.Options).TryGetValue(name, out string? reason))
+                    {
+                        Console.WriteLine($"Warning: API '{name}' is banned: {reason}");
+                        skippedCount++;
+                        continue;
+                    }
+
+                    if (name.EndsWith(".*", StringComparison.Ordinal))
+                    {
+                        string? moduleName = name.Substring(0, name.Length - 2);
+                        int matches = superGenerator.TryGenerateAllExternMethods(moduleName, CancellationToken.None);
+                        if (matches == 0)
+                        {
+                            Console.WriteLine($"Warning: No methods found under module '{moduleName}'");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"Generated {matches} methods from module '{moduleName}'");
+                        }
+                        processedCount++;
+                        continue;
+                    }
+
+                    superGenerator.TryGenerate(name, out IReadOnlyCollection<string> matchingApis, out IReadOnlyCollection<string> redirectedEnums, CancellationToken.None);
+                    
+                    foreach (string declaringEnum in redirectedEnums)
+                    {
+                        Console.WriteLine($"Warning: Use the name of the enum that declares this constant: {declaringEnum}");
+                    }
+
+                    switch (matchingApis.Count)
+                    {
+                        case 0:
+                            Console.WriteLine($"Warning: Method, type or constant '{name}' not found");
+                            errorCount++;
+                            break;
+                        case 1:
+                            Console.WriteLine($"Generated: {name}");
+                            processedCount++;
+                            break;
+                        case > 1:
+                            Console.Error.WriteLine($"Error: The API '{name}' is ambiguous. Please specify one of: {string.Join(", ", matchingApis.Select(api => $"\"{api}\""))}");
+                            errorCount++;
+                            break;
+                    }
+                }
+                catch (PlatformIncompatibleException)
+                {
+                    Console.WriteLine($"Warning: API '{name}' is not available for the target platform");
+                    skippedCount++;
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"Error processing '{name}': {ex.Message}");
+                    errorCount++;
+                }
+            }
+
+            Console.WriteLine($"Processing complete. Processed: {processedCount}, Skipped: {skippedCount}, Errors: {errorCount}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Failed to process NativeMethods.txt file: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static bool GenerateAndWriteFiles(SuperGenerator superGenerator, DirectoryInfo outputPath)
+    {
+        try
+        {
+            // Ensure output directory exists
+            outputPath.Create();
+            Console.WriteLine($"Output directory: {outputPath.FullName}");
+
+            var compilationUnits = superGenerator.GetCompilationUnits(CancellationToken.None);
+            int fileCount = 0;
+
+            foreach (KeyValuePair<string, CompilationUnitSyntax> unit in compilationUnits)
+            {
+                string fileName = unit.Key;
+                string filePath = Path.Combine(outputPath.FullName, fileName);
+
+                // Write the file
+                string sourceText = unit.Value.GetText(Encoding.UTF8).ToString();
+                File.WriteAllText(filePath, sourceText, Encoding.UTF8);
+
+                Console.WriteLine($"Generated: {fileName} ({sourceText.Length} characters)");
+                fileCount++;
+            }
+
+            Console.WriteLine($"Successfully generated {fileCount} source files.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Failed to generate and write files: {ex.Message}");
+            return false;
+        }
+    }
+}
