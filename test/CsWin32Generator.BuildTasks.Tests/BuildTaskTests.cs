@@ -7,6 +7,8 @@ using Microsoft.Windows.CsWin32.BuildTasks;
 using Moq;
 using Xunit;
 
+#pragma warning disable SA1116
+
 namespace Microsoft.Windows.CsWin32.Tests;
 
 public class BuildTaskTests
@@ -180,20 +182,13 @@ public class BuildTaskTests
     public void Execute_WithMockToolExecutor_CallsExecutorWithCorrectParameters()
     {
         // Arrange
-        var mockExecutor = new Mock<IToolExecutor>();
-        mockExecutor.Setup(e => e.ExecuteTool(
-                It.IsAny<string>(),
-                It.IsAny<string>(),
-                It.IsAny<string>()))
-           .Returns(true);
+        Mock<IToolExecutor> mockExecutor = new();
 
-        var task = CreateTaskWithMockBuildEngine();
+        var task = CreateTaskWithMockBuildEngine(mockExecutor.Object);
         SetupRequiredParameters(task);
-        task.ToolExecutor = mockExecutor.Object;
-
-        // Create the required file
-        Directory.CreateDirectory(Path.GetDirectoryName(task.NativeMethodsTxt)!);
-        File.WriteAllText(task.NativeMethodsTxt!, "CreateFile");
+        // MSBuild executor expects the tool file to exist, so set it to ourselves for now.
+        task.ToolExe = typeof(CsWin32CodeGeneratorTask).Assembly.Location;
+        task.ToolPath = null;
 
         // Act
         bool result = task.Execute();
@@ -201,18 +196,12 @@ public class BuildTaskTests
         // Assert
         Assert.True(result);
         mockExecutor.Verify(e => e.ExecuteTool(
-            It.Is<string>(toolPath => toolPath.EndsWith("CsWin32Generator.exe")),
+            It.Is<string>(toolPath => toolPath is object),
             It.Is<string>(commandLine => commandLine.Contains("--native-methods-txt") &&
                                         commandLine.Contains("--output-path") &&
                                         commandLine.Contains("--metadata-paths")),
             It.IsAny<string>()),
             Times.Once);
-
-        // Clean up
-        if (File.Exists(task.NativeMethodsTxt!))
-        {
-            File.Delete(task.NativeMethodsTxt!);
-        }
     }
 
     [Theory]
@@ -325,13 +314,13 @@ public class BuildTaskTests
         Assert.Contains("--metadata-paths", commandLine);
     }
 
-    private static CsWin32CodeGeneratorTask CreateTaskWithMockBuildEngine()
+    private static CsWin32CodeGeneratorTask CreateTaskWithMockBuildEngine(IToolExecutor toolExecutor = null)
     {
         var buildEngine = new Mock<IBuildEngine>();
         buildEngine.Setup(x => x.LogErrorEvent(It.IsAny<BuildErrorEventArgs>()));
         buildEngine.Setup(x => x.LogMessageEvent(It.IsAny<BuildMessageEventArgs>()));
 
-        return new CsWin32CodeGeneratorTask
+        return new CsWin32CodeGeneratorTask(toolExecutor)
         {
             BuildEngine = buildEngine.Object,
         };

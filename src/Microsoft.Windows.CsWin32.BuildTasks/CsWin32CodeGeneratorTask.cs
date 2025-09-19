@@ -7,37 +7,19 @@ using Microsoft.Build.Utilities;
 namespace Microsoft.Windows.CsWin32.BuildTasks;
 
 /// <summary>
-/// Interface for executing command line tools.
+/// Interface for executing command line tools (test hook).
 /// </summary>
 public interface IToolExecutor
 {
     /// <summary>
     /// Executes a tool with the given command line arguments.
+    /// Should return the process exit code (0 indicates success).
     /// </summary>
-    /// <param name="toolPath">The path to the tool executable.</param>
-    /// <param name="commandLineCommands">The command line arguments.</param>
-    /// <param name="workingDirectory">The working directory for the tool execution.</param>
-    /// <returns><see langword="true"/> if the tool executed successfully; otherwise, <see langword="false"/>.</returns>
-    bool ExecuteTool(string toolPath, string commandLineCommands, string workingDirectory);
-}
-
-/// <summary>
-/// Default implementation of IToolExecutor that delegates to ToolTask base class.
-/// </summary>
-internal class DefaultToolExecutor : IToolExecutor
-{
-    private readonly ToolTask toolTask;
-
-    public DefaultToolExecutor(ToolTask toolTask)
-    {
-        this.toolTask = toolTask;
-    }
-
-    public bool ExecuteTool(string toolPath, string commandLineCommands, string workingDirectory)
-    {
-        // This will be called by the base ToolTask implementation
-        return true; // The actual execution is handled by ToolTask.Execute()
-    }
+    /// <param name="pathToTool">Path to the executable.</param>
+    /// <param name="commandLineCommands">Command line (excluding response file commands).</param>
+    /// <param name="responseFileCommands">Content that would be written to the response file (if any).</param>
+    /// <returns>The exit code (0 for success).</returns>
+    int ExecuteTool(string pathToTool, string commandLineCommands, string responseFileCommands);
 }
 
 /// <summary>
@@ -48,12 +30,19 @@ public class CsWin32CodeGeneratorTask : ToolTask
     private IToolExecutor? toolExecutor;
 
     /// <summary>
-    /// Gets or sets the tool executor for testing purposes.
+    /// Initializes a new instance of the <see cref="CsWin32CodeGeneratorTask"/> class.
     /// </summary>
-    public IToolExecutor? ToolExecutor
+    public CsWin32CodeGeneratorTask()
     {
-        get => this.toolExecutor ?? new DefaultToolExecutor(this);
-        set => this.toolExecutor = value;
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="CsWin32CodeGeneratorTask"/> class.
+    /// </summary>
+    /// <param name="toolExecutor">DI for unit testing.</param>
+    public CsWin32CodeGeneratorTask(IToolExecutor? toolExecutor)
+    {
+        this.toolExecutor = toolExecutor;
     }
 
     /// <summary>
@@ -115,68 +104,36 @@ public class CsWin32CodeGeneratorTask : ToolTask
     [Output]
     public ITaskItem[]? GeneratedFiles { get; set; }
 
-    /// <summary>
-    /// Gets the name of the tool executable.
-    /// </summary>
+    /// <inheritdoc />
     protected override string ToolName => "CsWin32Generator.exe";
 
-    /// <summary>
-    /// Executes the task after the tool has run successfully.
-    /// </summary>
-    /// <returns><see langword="true"/> if the task executed successfully; otherwise, <see langword="false"/>.</returns>
+    /// <inheritdoc/>
     public override bool Execute()
     {
-        // If we have a custom tool executor (for testing), use it instead of base.Execute()
-        if (this.toolExecutor != null)
-        {
-            if (!this.ValidateParameters())
-            {
-                return false;
-            }
-
-            string toolPath = this.GenerateFullPathToTool();
-            string commandLine = this.GenerateCommandLineCommands();
-            bool executionSuccess = this.toolExecutor.ExecuteTool(toolPath, commandLine, this.GetWorkingDirectory());
-
-            if (executionSuccess && !string.IsNullOrEmpty(this.OutputPath))
-            {
-                this.PopulateGeneratedFiles();
-            }
-
-            return executionSuccess;
-        }
-
-        bool success = base.Execute();
-
-        if (success && !string.IsNullOrEmpty(this.OutputPath))
+        bool baseSuccess = base.Execute();
+        if (baseSuccess && !string.IsNullOrEmpty(this.OutputPath))
         {
             this.PopulateGeneratedFiles();
         }
 
-        return success;
+        return baseSuccess;
     }
 
     /// <summary>
-    /// Gets the full path to the tool executable.
+    /// Exposes the generated command line arguments (for tests).
     /// </summary>
-    /// <returns>The full path to the tool executable.</returns>
+    /// <returns>Command line arguments.</returns>
+    public string GetCommandLineArguments() => this.GenerateCommandLineCommands();
+
+    /// <inheritdoc />
     protected override string GenerateFullPathToTool()
     {
-        if (!string.IsNullOrEmpty(this.ToolPath))
-        {
-            return this.ToolPath;
-        }
-
-        // The tool should be in the same directory as this assembly
         string assemblyLocation = typeof(CsWin32CodeGeneratorTask).Assembly.Location;
         string assemblyDirectory = Path.GetDirectoryName(assemblyLocation)!;
-        return Path.Combine(assemblyDirectory, this.ToolName);
+        return Path.Combine(assemblyDirectory, this.ToolExe);
     }
 
-    /// <summary>
-    /// Generates the command line arguments for the tool.
-    /// </summary>
-    /// <returns>The command line arguments.</returns>
+    /// <inheritdoc />
     protected override string GenerateCommandLineCommands()
     {
         var commandLine = new CommandLineBuilder();
@@ -243,10 +200,7 @@ public class CsWin32CodeGeneratorTask : ToolTask
         return commandLine.ToString();
     }
 
-    /// <summary>
-    /// Validates the task parameters.
-    /// </summary>
-    /// <returns><see langword="true"/> if the parameters are valid; otherwise, <see langword="false"/>.</returns>
+    /// <inheritdoc />
     protected override bool ValidateParameters()
     {
         if (string.IsNullOrEmpty(this.NativeMethodsTxt))
@@ -276,25 +230,22 @@ public class CsWin32CodeGeneratorTask : ToolTask
         return true;
     }
 
-    /// <summary>
-    /// Gets the command line arguments that would be passed to the tool (for testing purposes).
-    /// </summary>
-    /// <returns>The command line arguments.</returns>
-    public string GetCommandLineArguments()
+    /// <inheritdoc />
+    protected override int ExecuteTool(string pathToTool, string commandLineCommands, string responseFileCommands)
     {
-        return this.GenerateCommandLineCommands();
+        if (this.toolExecutor is object)
+        {
+            return this.toolExecutor.ExecuteTool(pathToTool, commandLineCommands, responseFileCommands);
+        }
+
+        return base.ExecuteTool(pathToTool, commandLineCommands, responseFileCommands);
     }
 
-    private static string[] SplitPaths(string paths)
-    {
-        return paths.Split(new char[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
-    }
+    private static string[] SplitPaths(string paths) => paths.Split(new char[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
 
     private void PopulateGeneratedFiles()
     {
-        // Populate the GeneratedFiles output with the files that were created
         var generatedFiles = new List<ITaskItem>();
-
         if (Directory.Exists(this.OutputPath))
         {
             foreach (string filePath in Directory.GetFiles(this.OutputPath, "*.g.cs", SearchOption.TopDirectoryOnly))
