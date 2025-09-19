@@ -41,28 +41,6 @@ public class CsWin32GeneratorTests
         await this.InvokeGenerator("NativeMethods.txt", "NativeMethods.json");
     }
 
-    //[Fact]
-    //public async Task CommandLineTool_GeneratesCode_WithNativeMethodsTxtAndJson()
-    //{
-    //    // Arrange
-    //    string nativeMethodsTxtPath = Path.Combine("test", "GenerationSandbox.Tests", "NativeMethods.txt");
-    //    string nativeMethodsJsonPath = Path.Combine("test", "GenerationSandbox.Tests", "NativeMethods.json");
-    //    string outputPath = Path.Combine(Path.GetTempPath(), "CsWin32GeneratorTests_Output2");
-    //    Directory.CreateDirectory(outputPath);
-
-    //    // Act
-    //    int exitCode = await CsWin32Generator.Program.Main(new[]
-    //    {
-    //        "--native-methods-txt", nativeMethodsTxtPath,
-    //        "--native-methods-json", nativeMethodsJsonPath,
-    //        "--output-path", outputPath,
-    //    });
-
-    //    // Assert
-    //    Assert.Equal(0, exitCode);
-    //    Assert.True(Directory.GetFiles(outputPath, "*.g.cs").Any(), "No generated files found.");
-    //}
-
     [Fact]
     public async Task CommandLineTool_ShowsError_WhenNativeMethodsTxtMissing()
     {
@@ -128,6 +106,7 @@ public class CsWin32GeneratorTests
         {
             Directory.CreateDirectory(outputPath);
         }
+
         return outputPath;
     }
 
