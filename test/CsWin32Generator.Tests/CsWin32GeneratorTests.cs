@@ -1,46 +1,44 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using System.CommandLine.Completions;
+using System.Runtime.CompilerServices;
 using System.Text;
-using Microsoft.Testing.Platform.Logging;
 using Xunit;
 
 namespace Microsoft.Windows.CsWin32.Tests;
 
 public class CsWin32GeneratorTests
 {
+    public CsWin32GeneratorTests()
+    {
+        string outputPath = this.GetOutputDirectory();
+        if (Directory.Exists(outputPath))
+        {
+            Directory.Delete(outputPath, true);
+        }
+    }
+
     public ITestOutputHelper Logger => TestContext.Current.TestOutputHelper!;
 
     [Fact]
     public async Task BasicNativeMethods()
     {
-        Console.SetOut(new TestOutputWriter(Logger));
+        await this.InvokeGenerator("BasicNativeMethods.txt");
+    }
 
-        // Arrange
-        string nativeMethodsTxtPath = Path.Combine(Path.GetDirectoryName(typeof(CsWin32GeneratorTests).Assembly.Location)!, "TestContent", "BasicNativeMethods.txt");
-        string win32winmd = Path.Combine(Path.GetDirectoryName(typeof(CsWin32GeneratorTests).Assembly.Location)!, "Windows.Win32.winmd");
-        string outputPath = Path.Combine(this.GetOutputDirectory(), nameof(this.BasicNativeMethods));
-        if (Directory.Exists(outputPath))
-        {
-            Directory.Delete(outputPath, true);
-        }
+    [Fact]
+    public async Task Generate_RmRegisterResources()
+    {
+        string nativeMethodsTxt = Path.Combine(this.GetTestCaseOutputDirectory(), "RmRegisterResources.txt");
+        File.WriteAllLines(nativeMethodsTxt, ["RmRegisterResources"]);
 
-        Directory.CreateDirectory(outputPath);
+        await this.InvokeGenerator(nativeMethodsTxt);
+    }
 
-        Logger.WriteLine($"OutputPath: {outputPath}");
-
-        // Act
-        int exitCode = await CsWin32Generator.Program.Main(new[]
-        {
-            "--native-methods-txt", nativeMethodsTxtPath,
-            "--metadata-paths", win32winmd,
-            "--output-path", outputPath,
-        });
-
-        // Assert
-        Assert.Equal(0, exitCode);
-        Assert.True(Directory.GetFiles(outputPath, "*.g.cs").Any(), "No generated files found.");
+    [Fact]
+    public async Task TestNativeMethods()
+    {
+        await this.InvokeGenerator("NativeMethods.txt", "NativeMethods.json");
     }
 
     //[Fact]
@@ -84,6 +82,55 @@ public class CsWin32GeneratorTests
         Assert.NotEqual(0, exitCode);
     }
 
+    private async Task InvokeGenerator(string nativeMethodsTxt, string? nativeMethodsJson = null, [CallerMemberName] string testCase = "")
+    {
+        Console.SetOut(new TestOutputWriter(this.Logger));
+
+        // Arrange
+        string nativeMethodsTxtPath = Path.Combine(Path.GetDirectoryName(typeof(CsWin32GeneratorTests).Assembly.Location)!, "TestContent", nativeMethodsTxt);
+        string win32winmd = Path.Combine(Path.GetDirectoryName(typeof(CsWin32GeneratorTests).Assembly.Location)!, "Windows.Win32.winmd");
+        string outputPath = this.GetTestCaseOutputDirectory(testCase);
+
+        Directory.CreateDirectory(outputPath);
+
+        this.Logger.WriteLine($"OutputPath: {outputPath}");
+
+        List<string> args = new();
+        args.AddRange(["--native-methods-txt", nativeMethodsTxtPath]);
+        args.AddRange(["--metadata-paths", win32winmd]);
+        args.AddRange(["--output-path", outputPath]);
+        args.AddRange(["--platform", "x64"]);
+        if (nativeMethodsJson is string)
+        {
+            string nativeMethodsJsonPath = Path.Combine(Path.GetDirectoryName(typeof(CsWin32GeneratorTests).Assembly.Location)!, "TestContent", nativeMethodsJson);
+            args.AddRange(["--native-methods-json", nativeMethodsJsonPath]);
+        }
+
+        foreach (System.Reflection.Assembly reference in AppDomain.CurrentDomain.GetAssemblies().Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location)))
+        {
+            args.AddRange(["--references", reference.Location]);
+        }
+
+        this.Logger.WriteLine($"CsWin32Generator {string.Join(" ", args)}");
+
+        // Act
+        int exitCode = await CsWin32Generator.Program.Main(args.ToArray());
+
+        // Assert
+        Assert.Equal(0, exitCode);
+        Assert.True(Directory.GetFiles(outputPath, "*.g.cs").Any(), "No generated files found.");
+    }
+
+    private string GetTestCaseOutputDirectory([CallerMemberName] string testCase = "")
+    {
+        string outputPath = Path.Combine(this.GetOutputDirectory(), testCase);
+        if (!Directory.Exists(outputPath))
+        {
+            Directory.CreateDirectory(outputPath);
+        }
+        return outputPath;
+    }
+
     private string GetOutputDirectory()
     {
         return Path.Combine(Path.GetDirectoryName(typeof(CsWin32GeneratorTests).Assembly.Location)!, "TestOutput");
@@ -91,6 +138,8 @@ public class CsWin32GeneratorTests
 
     private class TestOutputWriter : TextWriter
     {
+        private ITestOutputHelper outputHelper;
+
         public TestOutputWriter(ITestOutputHelper outputHelper)
         {
             this.outputHelper = outputHelper;
@@ -102,7 +151,5 @@ public class CsWin32GeneratorTests
         {
             this.outputHelper.Write(new string(buffer, index, count));
         }
-
-        private ITestOutputHelper outputHelper;
     }
 }

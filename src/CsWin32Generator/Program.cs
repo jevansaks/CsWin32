@@ -125,6 +125,17 @@ public partial class Program
         var platform = parseResult.GetValueForOption(platformOption);
         var references = parseResult.GetValueForOption(referencesOption);
 
+        // Check for errors before continuing.
+        if (parseResult.Errors.Count > 0)
+        {
+            foreach (ParseError error in parseResult.Errors)
+            {
+                Console.Error.WriteLine($"cswin32 : error : {error.Message}");
+            }
+
+            return 1;
+        }
+
         try
         {
             var result = await GenerateCode(
@@ -143,10 +154,10 @@ public partial class Program
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Error: {ex.Message}");
+            Console.Error.WriteLine($"CsWin32 : error : {ex.Message}");
             if (ex.InnerException != null)
             {
-                Console.Error.WriteLine($"Inner exception: {ex.InnerException.Message}");
+                Console.Error.WriteLine($"CsWin32 : error : Inner exception: {ex.InnerException.Message}");
             }
 
             return 1;
@@ -287,41 +298,17 @@ public partial class Program
     {
         var metadataReferences = new List<MetadataReference>();
 
-#pragma warning disable SA1005, SA1512
-        // Add basic framework references
-        //string? runtimePath = Path.GetDirectoryName(typeof(object).Assembly.Location);
-        //if (runtimePath != null)
-        //{
-        //    string systemRuntimePath = Path.Combine(runtimePath, "System.Runtime.dll");
-        //    if (File.Exists(systemRuntimePath))
-        //    {
-        //        metadataReferences.Add(MetadataReference.CreateFromFile(systemRuntimePath));
-        //    }
-
-        //    string netstandardPath = Path.Combine(runtimePath, "netstandard.dll");
-        //    if (File.Exists(netstandardPath))
-        //    {
-        //        metadataReferences.Add(MetadataReference.CreateFromFile(netstandardPath));
-        //    }
-
-        //    string systemMemoryPath = Path.Combine(runtimePath, "System.Memory.dll");
-        //    if (File.Exists(systemMemoryPath))
-        //    {
-        //        metadataReferences.Add(MetadataReference.CreateFromFile(systemMemoryPath));
-        //    }
-        //}
-
         // Add additional references if provided
-        //if (references != null)
-        //{
-        //    foreach (var reference in references)
-        //    {
-        //        if (reference.Exists)
-        //        {
-        //            metadataReferences.Add(MetadataReference.CreateFromFile(reference.FullName));
-        //        }
-        //    }
-        //}
+        if (references is object)
+        {
+            foreach (var reference in references)
+            {
+                if (reference.Exists)
+                {
+                    metadataReferences.Add(MetadataReference.CreateFromFile(reference.FullName));
+                }
+            }
+        }
 
         Microsoft.CodeAnalysis.Platform compilationPlatform = platform switch
         {
@@ -471,13 +458,13 @@ public partial class Program
                 }
                 catch (Exception ex)
                 {
-                    Console.Error.WriteLine($"Error processing '{name}': {ex.Message}");
+                    Console.Error.WriteLine($"CsWin32 : error : '{name}': {ex.Message}");
                     errorCount++;
                 }
             }
 
             Console.WriteLine($"Processing complete. Processed: {processedCount}, Skipped: {skippedCount}, Errors: {errorCount}");
-            return true;
+            return errorCount == 0;
         }
         catch (Exception ex)
         {
