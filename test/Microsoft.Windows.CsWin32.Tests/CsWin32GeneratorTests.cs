@@ -12,4 +12,65 @@ public class CsWin32GeneratorTests
         // For now, it's a placeholder since we'd need to set up the tool properly
         Assert.True(true, "Command line tool compilation verified");
     }
+
+    [Fact]
+    public async Task CommandLineTool_GeneratesCode_WithNativeMethodsTxtOnly()
+    {
+        // Arrange
+        string nativeMethodsTxtPath = Path.Combine("test", "GenerationSandbox.Tests", "NativeMethods.txt");
+        string outputPath = Path.Combine(Path.GetTempPath(), "CsWin32GeneratorTests_Output1");
+        Directory.CreateDirectory(outputPath);
+
+        // Act
+        int exitCode = await CsWin32Generator.Program.Main(new[]
+        {
+            "--native-methods-txt", nativeMethodsTxtPath,
+            "--output-path", outputPath,
+        });
+
+        // Assert
+        Assert.Equal(0, exitCode);
+        Assert.True(Directory.GetFiles(outputPath, "*.g.cs").Any(), "No generated files found.");
+    }
+
+    [Fact]
+    public async Task CommandLineTool_GeneratesCode_WithNativeMethodsTxtAndJson()
+    {
+        // Arrange
+        string nativeMethodsTxtPath = Path.Combine("test", "GenerationSandbox.Tests", "NativeMethods.txt");
+        string nativeMethodsJsonPath = Path.Combine("test", "GenerationSandbox.Tests", "NativeMethods.json");
+        string outputPath = Path.Combine(Path.GetTempPath(), "CsWin32GeneratorTests_Output2");
+        Directory.CreateDirectory(outputPath);
+
+        // Act
+        int exitCode = await CsWin32Generator.Program.Main(new[]
+        {
+            "--native-methods-txt", nativeMethodsTxtPath,
+            "--native-methods-json", nativeMethodsJsonPath,
+            "--output-path", outputPath,
+        });
+
+        // Assert
+        Assert.Equal(0, exitCode);
+        Assert.True(Directory.GetFiles(outputPath, "*.g.cs").Any(), "No generated files found.");
+    }
+
+    [Fact]
+    public async Task CommandLineTool_ShowsError_WhenNativeMethodsTxtMissing()
+    {
+        // Arrange
+        string missingNativeMethodsTxtPath = Path.Combine("test", "NonExistent", "NativeMethods.txt");
+        string outputPath = Path.Combine(Path.GetTempPath(), "CsWin32GeneratorTests_Output3");
+        Directory.CreateDirectory(outputPath);
+
+        // Act
+        int exitCode = await CsWin32Generator.Program.Main(new[]
+        {
+            "--native-methods-txt", missingNativeMethodsTxtPath,
+            "--output-path", outputPath,
+        });
+
+        // Assert
+        Assert.NotEqual(0, exitCode);
+    }
 }

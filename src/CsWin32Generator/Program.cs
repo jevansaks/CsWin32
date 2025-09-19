@@ -3,6 +3,7 @@
 
 using System.CommandLine;
 using System.CommandLine.Invocation;
+using System.CommandLine.Parsing;
 using System.Text;
 using System.Text.Json;
 using Microsoft.CodeAnalysis;
@@ -15,7 +16,7 @@ namespace CsWin32Generator;
 /// <summary>
 /// Main program for the CsWin32 command line code generator.
 /// </summary>
-internal class Program
+public class Program
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -35,7 +36,7 @@ internal class Program
     /// </summary>
     /// <param name="args">Command line arguments.</param>
     /// <returns>Exit code (0 for success, 1 for failure).</returns>
-    internal static async Task<int> Main(string[] args)
+    public static async Task<int> Main(string[] args)
     {
         var nativeMethodsTxtOption = new Option<FileInfo>(
             name: "--native-methods-txt",
@@ -112,48 +113,44 @@ internal class Program
             referencesOption,
         };
 
-        rootCommand.SetHandler(async (InvocationContext context) =>
+        ParseResult parseResult = rootCommand.Parse(args);
+        var nativeMethodsTxt = parseResult.GetValueForOption(nativeMethodsTxtOption)!;
+        var nativeMethodsJson = parseResult.GetValueForOption(nativeMethodsJsonOption);
+        var metadataPaths = parseResult.GetValueForOption(metadataPathsOption)!;
+        var docPaths = parseResult.GetValueForOption(docPathsOption);
+        var appLocalAllowedLibraries = parseResult.GetValueForOption(appLocalAllowedLibrariesOption);
+        var outputPath = parseResult.GetValueForOption(outputPathOption)!;
+        var allowUnsafeBlocks = parseResult.GetValueForOption(allowUnsafeBlocksOption);
+        var targetFramework = parseResult.GetValueForOption(targetFrameworkOption);
+        var platform = parseResult.GetValueForOption(platformOption);
+        var references = parseResult.GetValueForOption(referencesOption);
+
+        try
         {
-            var nativeMethodsTxt = context.ParseResult.GetValueForOption(nativeMethodsTxtOption)!;
-            var nativeMethodsJson = context.ParseResult.GetValueForOption(nativeMethodsJsonOption);
-            var metadataPaths = context.ParseResult.GetValueForOption(metadataPathsOption)!;
-            var docPaths = context.ParseResult.GetValueForOption(docPathsOption);
-            var appLocalAllowedLibraries = context.ParseResult.GetValueForOption(appLocalAllowedLibrariesOption);
-            var outputPath = context.ParseResult.GetValueForOption(outputPathOption)!;
-            var allowUnsafeBlocks = context.ParseResult.GetValueForOption(allowUnsafeBlocksOption);
-            var targetFramework = context.ParseResult.GetValueForOption(targetFrameworkOption);
-            var platform = context.ParseResult.GetValueForOption(platformOption);
-            var references = context.ParseResult.GetValueForOption(referencesOption);
+            var result = await GenerateCode(
+                nativeMethodsTxt,
+                nativeMethodsJson,
+                metadataPaths,
+                docPaths,
+                appLocalAllowedLibraries,
+                outputPath,
+                allowUnsafeBlocks,
+                targetFramework,
+                platform ?? "AnyCPU", // Provide default value for platform
+                references);
 
-            try
+            return result ? 0 : 1;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Error: {ex.Message}");
+            if (ex.InnerException != null)
             {
-                var result = await GenerateCode(
-                    nativeMethodsTxt,
-                    nativeMethodsJson,
-                    metadataPaths,
-                    docPaths,
-                    appLocalAllowedLibraries,
-                    outputPath,
-                    allowUnsafeBlocks,
-                    targetFramework,
-                    platform ?? "AnyCPU", // Provide default value for platform
-                    references).ConfigureAwait(false);
-
-                context.ExitCode = result ? 0 : 1;
+                Console.Error.WriteLine($"Inner exception: {ex.InnerException.Message}");
             }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"Error: {ex.Message}");
-                if (ex.InnerException != null)
-                {
-                    Console.Error.WriteLine($"Inner exception: {ex.InnerException.Message}");
-                }
 
-                context.ExitCode = 1;
-            }
-        });
-
-        return await rootCommand.InvokeAsync(args).ConfigureAwait(false);
+            return 1;
+        }
     }
 
     /// <summary>
