@@ -28,7 +28,7 @@
     <_CsWin32GeneratorToolPath Condition="!Exists('$(_CsWin32GeneratorToolPath)')">$(MSBuildThisFileDirectory)CsWin32Generator.exe</_CsWin32GeneratorToolPath>
   </PropertyGroup>
 
-  <UsingTask TaskName="CsWin32CodeGeneratorTask" AssemblyFile="$(MSBuildThisFileDirectory)..\Microsoft.Windows.CsWin32.dll" />
+  <UsingTask TaskName="CsWin32CodeGeneratorTask" AssemblyFile="$(MSBuildThisFileDirectory)Microsoft.Windows.CsWin32.BuildTasks.dll" />
 
   <Target Name="GenerateCsWin32Code" 
           BeforeTargets="CoreCompile"

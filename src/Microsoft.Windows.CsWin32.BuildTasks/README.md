@@ -1,13 +1,13 @@
 # CsWin32 MSBuild Task
 
-This directory contains an MSBuild task that invokes CsWin32 code generation at build time, similar to how the Roslyn source generator works but as a build task instead.
+This project contains an MSBuild task that invokes CsWin32 code generation at build time, similar to how the Roslyn source generator works but as a build task instead.
 
 ## Architecture
 
 The solution consists of two main components:
 
 1. **CsWin32Generator** (`src/CsWin32Generator/`) - A command line tool that performs the actual code generation
-2. **CsWin32CodeGeneratorTask** (`src/Microsoft.Windows.CsWin32/BuildTasks/`) - An MSBuild ToolTask that invokes the command line tool
+2. **CsWin32CodeGeneratorTask** (`src/Microsoft.Windows.CsWin32.BuildTasks/`) - An MSBuild ToolTask that invokes the command line tool
 
 ## Usage
 
