@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+
 using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
 
@@ -62,12 +65,7 @@ public class CsWin32CodeGeneratorTask : ToolTask
     public ITaskItem[]? References { get; set; }
 
     /// <summary>
-    /// Gets or sets the full path to the CsWin32Generator tool executable.
-    /// </summary>
-    public string? ToolPath { get; set; }
-
-    /// <summary>
-    /// Gets the generated source files.
+    /// Gets or sets the generated source files.
     /// </summary>
     [Output]
     public ITaskItem[]? GeneratedFiles { get; set; }
@@ -78,20 +76,50 @@ public class CsWin32CodeGeneratorTask : ToolTask
     protected override string ToolName => "CsWin32Generator.exe";
 
     /// <summary>
+    /// Executes the task after the tool has run successfully.
+    /// </summary>
+    /// <returns><see langword="true"/> if the task executed successfully; otherwise, <see langword="false"/>.</returns>
+    public override bool Execute()
+    {
+        bool success = base.Execute();
+
+        if (success && !string.IsNullOrEmpty(this.OutputPath))
+        {
+            // Populate the GeneratedFiles output with the files that were created
+            var generatedFiles = new List<ITaskItem>();
+
+            if (Directory.Exists(this.OutputPath))
+            {
+                foreach (string filePath in Directory.GetFiles(this.OutputPath, "*.g.cs", SearchOption.TopDirectoryOnly))
+                {
+                    var taskItem = new TaskItem(filePath);
+                    taskItem.SetMetadata("Generator", "CsWin32");
+                    generatedFiles.Add(taskItem);
+                }
+            }
+
+            this.GeneratedFiles = generatedFiles.ToArray();
+            this.Log.LogMessage(MessageImportance.Normal, $"Successfully generated {this.GeneratedFiles.Length} source files.");
+        }
+
+        return success;
+    }
+
+    /// <summary>
     /// Gets the full path to the tool executable.
     /// </summary>
     /// <returns>The full path to the tool executable.</returns>
     protected override string GenerateFullPathToTool()
     {
-        if (!string.IsNullOrEmpty(ToolPath))
+        if (!string.IsNullOrEmpty(this.ToolPath))
         {
-            return ToolPath;
+            return this.ToolPath;
         }
 
         // The tool should be in the same directory as this assembly
         string assemblyLocation = typeof(CsWin32CodeGeneratorTask).Assembly.Location;
         string assemblyDirectory = Path.GetDirectoryName(assemblyLocation)!;
-        return Path.Combine(assemblyDirectory, ToolName);
+        return Path.Combine(assemblyDirectory, this.ToolName);
     }
 
     /// <summary>
@@ -103,12 +131,12 @@ public class CsWin32CodeGeneratorTask : ToolTask
         var commandLine = new CommandLineBuilder();
 
         // Required parameters
-        commandLine.AppendSwitchIfNotNull("--native-methods-txt ", NativeMethodsTxt);
-        commandLine.AppendSwitchIfNotNull("--output-path ", OutputPath);
+        commandLine.AppendSwitchIfNotNull("--native-methods-txt ", this.NativeMethodsTxt);
+        commandLine.AppendSwitchIfNotNull("--output-path ", this.OutputPath);
 
-        if (!string.IsNullOrEmpty(MetadataPaths))
+        if (!string.IsNullOrEmpty(this.MetadataPaths))
         {
-            string[] paths = SplitPaths(MetadataPaths);
+            string[] paths = SplitPaths(this.MetadataPaths!);
             if (paths.Length > 0)
             {
                 commandLine.AppendSwitch("--metadata-paths");
@@ -120,11 +148,11 @@ public class CsWin32CodeGeneratorTask : ToolTask
         }
 
         // Optional parameters
-        commandLine.AppendSwitchIfNotNull("--native-methods-json ", NativeMethodsJson);
+        commandLine.AppendSwitchIfNotNull("--native-methods-json ", this.NativeMethodsJson);
 
-        if (!string.IsNullOrEmpty(DocPaths))
+        if (!string.IsNullOrEmpty(this.DocPaths))
         {
-            string[] paths = SplitPaths(DocPaths);
+            string[] paths = SplitPaths(this.DocPaths!);
             if (paths.Length > 0)
             {
                 commandLine.AppendSwitch("--doc-paths");
@@ -135,9 +163,9 @@ public class CsWin32CodeGeneratorTask : ToolTask
             }
         }
 
-        if (!string.IsNullOrEmpty(AppLocalAllowedLibraries))
+        if (!string.IsNullOrEmpty(this.AppLocalAllowedLibraries))
         {
-            string[] paths = SplitPaths(AppLocalAllowedLibraries);
+            string[] paths = SplitPaths(this.AppLocalAllowedLibraries!);
             if (paths.Length > 0)
             {
                 commandLine.AppendSwitch("--app-local-allowed-libraries");
@@ -148,14 +176,14 @@ public class CsWin32CodeGeneratorTask : ToolTask
             }
         }
 
-        commandLine.AppendSwitchIfNotNull("--allow-unsafe-blocks ", AllowUnsafeBlocks.ToString().ToLowerInvariant());
-        commandLine.AppendSwitchIfNotNull("--target-framework ", TargetFramework);
-        commandLine.AppendSwitchIfNotNull("--platform ", Platform);
+        commandLine.AppendSwitchIfNotNull("--allow-unsafe-blocks ", this.AllowUnsafeBlocks.ToString().ToLowerInvariant());
+        commandLine.AppendSwitchIfNotNull("--target-framework ", this.TargetFramework);
+        commandLine.AppendSwitchIfNotNull("--platform ", this.Platform);
 
-        if (References != null && References.Length > 0)
+        if (this.References != null && this.References.Length > 0)
         {
             commandLine.AppendSwitch("--references");
-            foreach (ITaskItem reference in References)
+            foreach (ITaskItem reference in this.References)
             {
                 commandLine.AppendFileNameIfNotNull(reference.ItemSpec);
             }
@@ -165,62 +193,32 @@ public class CsWin32CodeGeneratorTask : ToolTask
     }
 
     /// <summary>
-    /// Executes the task after the tool has run successfully.
-    /// </summary>
-    /// <returns><see langword="true"/> if the task executed successfully; otherwise, <see langword="false"/>.</returns>
-    public override bool Execute()
-    {
-        bool success = base.Execute();
-
-        if (success && !string.IsNullOrEmpty(OutputPath))
-        {
-            // Populate the GeneratedFiles output with the files that were created
-            var generatedFiles = new List<ITaskItem>();
-
-            if (Directory.Exists(OutputPath))
-            {
-                foreach (string filePath in Directory.GetFiles(OutputPath, "*.g.cs", SearchOption.TopDirectoryOnly))
-                {
-                    var taskItem = new TaskItem(filePath);
-                    taskItem.SetMetadata("Generator", "CsWin32");
-                    generatedFiles.Add(taskItem);
-                }
-            }
-
-            GeneratedFiles = generatedFiles.ToArray();
-            Log.LogMessage(MessageImportance.Normal, $"Successfully generated {GeneratedFiles.Length} source files.");
-        }
-
-        return success;
-    }
-
-    /// <summary>
     /// Validates the task parameters.
     /// </summary>
     /// <returns><see langword="true"/> if the parameters are valid; otherwise, <see langword="false"/>.</returns>
     protected override bool ValidateParameters()
     {
-        if (string.IsNullOrEmpty(NativeMethodsTxt))
+        if (string.IsNullOrEmpty(this.NativeMethodsTxt))
         {
-            Log.LogError("NativeMethodsTxt property must be specified.");
+            this.Log.LogError("NativeMethodsTxt property must be specified.");
             return false;
         }
 
-        if (!File.Exists(NativeMethodsTxt))
+        if (!File.Exists(this.NativeMethodsTxt))
         {
-            Log.LogError($"NativeMethods.txt file not found: {NativeMethodsTxt}");
+            this.Log.LogError($"NativeMethods.txt file not found: {this.NativeMethodsTxt}");
             return false;
         }
 
-        if (string.IsNullOrEmpty(MetadataPaths))
+        if (string.IsNullOrEmpty(this.MetadataPaths))
         {
-            Log.LogError("MetadataPaths property must be specified.");
+            this.Log.LogError("MetadataPaths property must be specified.");
             return false;
         }
 
-        if (string.IsNullOrEmpty(OutputPath))
+        if (string.IsNullOrEmpty(this.OutputPath))
         {
-            Log.LogError("OutputPath property must be specified.");
+            this.Log.LogError("OutputPath property must be specified.");
             return false;
         }
 

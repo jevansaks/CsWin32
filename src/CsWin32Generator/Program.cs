@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+
 using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.Text;
@@ -9,9 +12,12 @@ using Microsoft.Windows.CsWin32;
 
 namespace CsWin32Generator;
 
+/// <summary>
+/// Main program for the CsWin32 command line code generator.
+/// </summary>
 internal class Program
 {
-    private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
+    private static readonly JsonSerializerOptions JsonOptions = new()
     {
         AllowTrailingCommas = true,
         ReadCommentHandling = JsonCommentHandling.Skip,
@@ -24,13 +30,18 @@ internal class Program
         '\u200B', // ZERO WIDTH SPACE (U+200B)
     };
 
-    static async Task<int> Main(string[] args)
+    /// <summary>
+    /// Entry point for the command line application.
+    /// </summary>
+    /// <param name="args">Command line arguments.</param>
+    /// <returns>Exit code (0 for success, 1 for failure).</returns>
+    internal static async Task<int> Main(string[] args)
     {
         var nativeMethodsTxtOption = new Option<FileInfo>(
             name: "--native-methods-txt",
             description: "Path to the NativeMethods.txt file containing API names to generate.")
         {
-            IsRequired = true
+            IsRequired = true,
         };
 
         var nativeMethodsJsonOption = new Option<FileInfo?>(
@@ -42,28 +53,28 @@ internal class Program
             description: "Paths to Windows metadata files (.winmd).")
         {
             IsRequired = true,
-            AllowMultipleArgumentsPerToken = true
+            AllowMultipleArgumentsPerToken = true,
         };
 
         var docPathsOption = new Option<FileInfo[]?>(
             name: "--doc-paths",
             description: "Paths to documentation files.")
         {
-            AllowMultipleArgumentsPerToken = true
+            AllowMultipleArgumentsPerToken = true,
         };
 
         var appLocalAllowedLibrariesOption = new Option<FileInfo[]?>(
             name: "--app-local-allowed-libraries",
             description: "Paths to app-local allowed libraries.")
         {
-            AllowMultipleArgumentsPerToken = true
+            AllowMultipleArgumentsPerToken = true,
         };
 
         var outputPathOption = new Option<DirectoryInfo>(
             name: "--output-path",
             description: "Output directory where generated files will be written.")
         {
-            IsRequired = true
+            IsRequired = true,
         };
 
         var allowUnsafeBlocksOption = new Option<bool>(
@@ -84,7 +95,7 @@ internal class Program
             name: "--references",
             description: "Additional references to be included in the compilation context.")
         {
-            AllowMultipleArgumentsPerToken = true
+            AllowMultipleArgumentsPerToken = true,
         };
 
         var rootCommand = new RootCommand("CsWin32 Code Generator - Generates P/Invoke methods and supporting types from Windows metadata.")
@@ -98,7 +109,7 @@ internal class Program
             allowUnsafeBlocksOption,
             targetFrameworkOption,
             platformOption,
-            referencesOption
+            referencesOption,
         };
 
         rootCommand.SetHandler(async (InvocationContext context) =>
@@ -125,8 +136,8 @@ internal class Program
                     outputPath,
                     allowUnsafeBlocks,
                     targetFramework,
-                    platform,
-                    references);
+                    platform ?? "AnyCPU", // Provide default value for platform
+                    references).ConfigureAwait(false);
 
                 context.ExitCode = result ? 0 : 1;
             }
@@ -137,14 +148,29 @@ internal class Program
                 {
                     Console.Error.WriteLine($"Inner exception: {ex.InnerException.Message}");
                 }
+
                 context.ExitCode = 1;
             }
         });
 
-        return await rootCommand.InvokeAsync(args);
+        return await rootCommand.InvokeAsync(args).ConfigureAwait(false);
     }
 
-    private static async Task<bool> GenerateCode(
+    /// <summary>
+    /// Generates code using the CsWin32 generator.
+    /// </summary>
+    /// <param name="nativeMethodsTxt">Path to the NativeMethods.txt file.</param>
+    /// <param name="nativeMethodsJson">Path to the NativeMethods.json file (optional).</param>
+    /// <param name="metadataPaths">Paths to Windows metadata files.</param>
+    /// <param name="docPaths">Paths to documentation files (optional).</param>
+    /// <param name="appLocalAllowedLibraries">Paths to app-local allowed libraries (optional).</param>
+    /// <param name="outputPath">Output directory for generated files.</param>
+    /// <param name="allowUnsafeBlocks">Whether unsafe code is allowed.</param>
+    /// <param name="targetFramework">Target framework version.</param>
+    /// <param name="platform">Target platform.</param>
+    /// <param name="references">Additional assembly references (optional).</param>
+    /// <returns>True if successful, false otherwise.</returns>
+    private static Task<bool> GenerateCode(
         FileInfo nativeMethodsTxt,
         FileInfo? nativeMethodsJson,
         FileInfo[] metadataPaths,
@@ -161,13 +187,13 @@ internal class Program
         if (!nativeMethodsTxt.Exists)
         {
             Console.Error.WriteLine($"NativeMethods.txt file not found: {nativeMethodsTxt.FullName}");
-            return false;
+            return Task.FromResult(false);
         }
 
         if (metadataPaths.Length == 0)
         {
             Console.Error.WriteLine("At least one metadata path must be provided.");
-            return false;
+            return Task.FromResult(false);
         }
 
         // Load generator options from NativeMethods.json if provided
@@ -180,7 +206,7 @@ internal class Program
             if (!metadataPath.Exists)
             {
                 Console.Error.WriteLine($"Metadata file not found: {metadataPath.FullName}");
-                return false;
+                return Task.FromResult(false);
             }
         }
 
@@ -208,7 +234,7 @@ internal class Program
         }
 
         // Create super generator
-        using SuperGenerator superGenerator = generators.Count == 1 
+        using SuperGenerator superGenerator = generators.Count == 1
             ? SuperGenerator.Combine(generators[0])
             : SuperGenerator.Combine(generators.ToArray());
 
@@ -217,18 +243,23 @@ internal class Program
         // Process NativeMethods.txt file
         if (!ProcessNativeMethodsFile(superGenerator, nativeMethodsTxt))
         {
-            return false;
+            return Task.FromResult(false);
         }
 
         // Generate compilation units and write to files
         if (!GenerateAndWriteFiles(superGenerator, outputPath))
         {
-            return false;
+            return Task.FromResult(false);
         }
 
-        return true;
+        return Task.FromResult(true);
     }
 
+    /// <summary>
+    /// Loads generator options from the NativeMethods.json file.
+    /// </summary>
+    /// <param name="nativeMethodsJson">Path to the NativeMethods.json file (optional).</param>
+    /// <returns>Generator options instance.</returns>
     private static GeneratorOptions LoadGeneratorOptions(FileInfo? nativeMethodsJson)
     {
         if (nativeMethodsJson?.Exists != true)
@@ -239,7 +270,7 @@ internal class Program
         try
         {
             string optionsJson = File.ReadAllText(nativeMethodsJson.FullName);
-            return JsonSerializer.Deserialize<GeneratorOptions>(optionsJson, JsonOptions);
+            return JsonSerializer.Deserialize<GeneratorOptions>(optionsJson, JsonOptions) ?? new GeneratorOptions();
         }
         catch (JsonException ex)
         {
@@ -248,6 +279,13 @@ internal class Program
         }
     }
 
+    /// <summary>
+    /// Creates a C# compilation context for code generation.
+    /// </summary>
+    /// <param name="allowUnsafeBlocks">Whether unsafe code is allowed.</param>
+    /// <param name="platform">Target platform.</param>
+    /// <param name="references">Additional assembly references (optional).</param>
+    /// <returns>C# compilation instance or null if creation fails.</returns>
     private static CSharpCompilation? CreateCompilation(bool allowUnsafeBlocks, string platform, FileInfo[]? references)
     {
         var metadataReferences = new List<MetadataReference>();
@@ -307,21 +345,31 @@ internal class Program
             options: compilationOptions);
     }
 
+    /// <summary>
+    /// Creates C# parse options based on the target framework.
+    /// </summary>
+    /// <param name="targetFramework">Target framework version (optional).</param>
+    /// <returns>C# parse options instance or null if creation fails.</returns>
     private static CSharpParseOptions? CreateParseOptions(string? targetFramework)
     {
         // Determine language version based on target framework
         LanguageVersion languageVersion = targetFramework switch
         {
-            var tf when tf?.StartsWith("net9.0") == true => LanguageVersion.Latest,
-            var tf when tf?.StartsWith("net8.0") == true => LanguageVersion.Latest,
-            var tf when tf?.StartsWith("net7.0") == true => LanguageVersion.Latest,
-            var tf when tf?.StartsWith("net6.0") == true => LanguageVersion.CSharp9,
+            var tf when tf?.StartsWith("net9.0", StringComparison.Ordinal) == true => LanguageVersion.Latest,
+            var tf when tf?.StartsWith("net8.0", StringComparison.Ordinal) == true => LanguageVersion.Latest,
+            var tf when tf?.StartsWith("net7.0", StringComparison.Ordinal) == true => LanguageVersion.Latest,
+            var tf when tf?.StartsWith("net6.0", StringComparison.Ordinal) == true => LanguageVersion.CSharp9,
             _ => LanguageVersion.CSharp9,
         };
 
         return new CSharpParseOptions(languageVersion: languageVersion);
     }
 
+    /// <summary>
+    /// Loads documentation from the specified paths.
+    /// </summary>
+    /// <param name="docPaths">Paths to documentation files (optional).</param>
+    /// <returns>Merged documentation instance or null if none available.</returns>
     private static Docs? LoadDocs(FileInfo[]? docPaths)
     {
         if (docPaths?.Length > 0)
@@ -348,13 +396,19 @@ internal class Program
         return null;
     }
 
+    /// <summary>
+    /// Processes the NativeMethods.txt file to generate APIs.
+    /// </summary>
+    /// <param name="superGenerator">The super generator instance.</param>
+    /// <param name="nativeMethodsTxt">Path to the NativeMethods.txt file.</param>
+    /// <returns>True if processing succeeded, false otherwise.</returns>
     private static bool ProcessNativeMethodsFile(SuperGenerator superGenerator, FileInfo nativeMethodsTxt)
     {
         try
         {
             var lines = File.ReadAllLines(nativeMethodsTxt.FullName);
             Console.WriteLine($"Processing {lines.Length} lines from {nativeMethodsTxt.Name}");
-            
+
             int processedCount = 0;
             int skippedCount = 0;
             int errorCount = 0;
@@ -372,14 +426,6 @@ internal class Program
                 {
                     // Skip banned API check for now since it's not accessible
                     // TODO: Consider making Generator.GetBannedAPIs or BannedAPIs public if needed
-                    /*var bannedApis = superGenerator.Generators.First().Value.BannedAPIs;
-                    if (bannedApis.TryGetValue(name, out string? reason))
-                    {
-                        Console.WriteLine($"Warning: API '{name}' is banned: {reason}");
-                        skippedCount++;
-                        continue;
-                    }*/
-
                     if (name.EndsWith(".*", StringComparison.Ordinal))
                     {
                         string? moduleName = name.Substring(0, name.Length - 2);
@@ -392,12 +438,13 @@ internal class Program
                         {
                             Console.WriteLine($"Generated {matches} methods from module '{moduleName}'");
                         }
+
                         processedCount++;
                         continue;
                     }
 
                     superGenerator.TryGenerate(name, out IReadOnlyCollection<string> matchingApis, out IReadOnlyCollection<string> redirectedEnums, CancellationToken.None);
-                    
+
                     foreach (string declaringEnum in redirectedEnums)
                     {
                         Console.WriteLine($"Warning: Use the name of the enum that declares this constant: {declaringEnum}");
@@ -441,6 +488,12 @@ internal class Program
         }
     }
 
+    /// <summary>
+    /// Generates and writes source files to the output directory.
+    /// </summary>
+    /// <param name="superGenerator">The super generator instance.</param>
+    /// <param name="outputPath">Output directory for generated files.</param>
+    /// <returns>True if generation succeeded, false otherwise.</returns>
     private static bool GenerateAndWriteFiles(SuperGenerator superGenerator, DirectoryInfo outputPath)
     {
         try
