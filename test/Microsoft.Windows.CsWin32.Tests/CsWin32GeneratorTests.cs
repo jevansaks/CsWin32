@@ -17,7 +17,8 @@ public class CsWin32GeneratorTests
     public async Task CommandLineTool_GeneratesCode_WithNativeMethodsTxtOnly()
     {
         // Arrange
-        string nativeMethodsTxtPath = Path.Combine("test", "GenerationSandbox.Tests", "NativeMethods.txt");
+        string nativeMethodsTxtPath = Path.Combine(Path.GetDirectoryName(typeof(CsWin32GeneratorTests).Assembly.Location)!, "TestContent", "NativeMethods.txt");
+        string win32winmd = Path.Combine(Path.GetDirectoryName(typeof(CsWin32GeneratorTests).Assembly.Location)!, "Windows.Win32.winmd");
         string outputPath = Path.Combine(Path.GetTempPath(), "CsWin32GeneratorTests_Output1");
         Directory.CreateDirectory(outputPath);
 
@@ -25,6 +26,7 @@ public class CsWin32GeneratorTests
         int exitCode = await CsWin32Generator.Program.Main(new[]
         {
             "--native-methods-txt", nativeMethodsTxtPath,
+            "--metadata-paths", win32winmd,
             "--output-path", outputPath,
         });
 

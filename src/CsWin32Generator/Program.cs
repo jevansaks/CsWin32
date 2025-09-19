@@ -2,10 +2,10 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System.CommandLine;
-using System.CommandLine.Invocation;
 using System.CommandLine.Parsing;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -16,7 +16,7 @@ namespace CsWin32Generator;
 /// <summary>
 /// Main program for the CsWin32 command line code generator.
 /// </summary>
-public class Program
+public partial class Program
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -267,7 +267,7 @@ public class Program
         try
         {
             string optionsJson = File.ReadAllText(nativeMethodsJson.FullName);
-            return JsonSerializer.Deserialize<GeneratorOptions>(optionsJson, JsonOptions) ?? new GeneratorOptions();
+            return JsonSerializer.Deserialize(optionsJson, GeneratorOptionsSerializerContext.Default.GeneratorOptions) ?? new GeneratorOptions();
         }
         catch (JsonException ex)
         {
@@ -288,39 +288,39 @@ public class Program
         var metadataReferences = new List<MetadataReference>();
 
         // Add basic framework references
-        string? runtimePath = Path.GetDirectoryName(typeof(object).Assembly.Location);
-        if (runtimePath != null)
-        {
-            string systemRuntimePath = Path.Combine(runtimePath, "System.Runtime.dll");
-            if (File.Exists(systemRuntimePath))
-            {
-                metadataReferences.Add(MetadataReference.CreateFromFile(systemRuntimePath));
-            }
+        //string? runtimePath = Path.GetDirectoryName(typeof(object).Assembly.Location);
+        //if (runtimePath != null)
+        //{
+        //    string systemRuntimePath = Path.Combine(runtimePath, "System.Runtime.dll");
+        //    if (File.Exists(systemRuntimePath))
+        //    {
+        //        metadataReferences.Add(MetadataReference.CreateFromFile(systemRuntimePath));
+        //    }
 
-            string netstandardPath = Path.Combine(runtimePath, "netstandard.dll");
-            if (File.Exists(netstandardPath))
-            {
-                metadataReferences.Add(MetadataReference.CreateFromFile(netstandardPath));
-            }
+        //    string netstandardPath = Path.Combine(runtimePath, "netstandard.dll");
+        //    if (File.Exists(netstandardPath))
+        //    {
+        //        metadataReferences.Add(MetadataReference.CreateFromFile(netstandardPath));
+        //    }
 
-            string systemMemoryPath = Path.Combine(runtimePath, "System.Memory.dll");
-            if (File.Exists(systemMemoryPath))
-            {
-                metadataReferences.Add(MetadataReference.CreateFromFile(systemMemoryPath));
-            }
-        }
+        //    string systemMemoryPath = Path.Combine(runtimePath, "System.Memory.dll");
+        //    if (File.Exists(systemMemoryPath))
+        //    {
+        //        metadataReferences.Add(MetadataReference.CreateFromFile(systemMemoryPath));
+        //    }
+        //}
 
         // Add additional references if provided
-        if (references != null)
-        {
-            foreach (var reference in references)
-            {
-                if (reference.Exists)
-                {
-                    metadataReferences.Add(MetadataReference.CreateFromFile(reference.FullName));
-                }
-            }
-        }
+        //if (references != null)
+        //{
+        //    foreach (var reference in references)
+        //    {
+        //        if (reference.Exists)
+        //        {
+        //            metadataReferences.Add(MetadataReference.CreateFromFile(reference.FullName));
+        //        }
+        //    }
+        //}
 
         Microsoft.CodeAnalysis.Platform compilationPlatform = platform switch
         {
@@ -523,5 +523,10 @@ public class Program
             Console.Error.WriteLine($"Failed to generate and write files: {ex.Message}");
             return false;
         }
+    }
+
+    [JsonSerializable(typeof(GeneratorOptions))]
+    internal partial class GeneratorOptionsSerializerContext : JsonSerializerContext
+    {
     }
 }
