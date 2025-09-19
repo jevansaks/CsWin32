@@ -287,6 +287,7 @@ public partial class Program
     {
         var metadataReferences = new List<MetadataReference>();
 
+#pragma warning disable SA1005, SA1512
         // Add basic framework references
         //string? runtimePath = Path.GetDirectoryName(typeof(object).Assembly.Location);
         //if (runtimePath != null)

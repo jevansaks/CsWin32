@@ -2,6 +2,9 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 using System.Text.Json;
+#if NET9_0_OR_GREATER
+using System.Text.Json.Serialization;
+#endif
 using Microsoft.CodeAnalysis.Text;
 
 namespace Microsoft.Windows.CsWin32;
@@ -10,7 +13,7 @@ namespace Microsoft.Windows.CsWin32;
 /// Generates the source code for the p/invoke methods and supporting types into some C# project.
 /// </summary>
 [Generator]
-public class SourceGenerator : ISourceGenerator
+public partial class SourceGenerator : ISourceGenerator
 {
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
     public static readonly DiagnosticDescriptor InternalError = new DiagnosticDescriptor(
@@ -180,7 +183,11 @@ public class SourceGenerator : ISourceGenerator
             string optionsJson = nativeMethodsJsonFile.GetText(context.CancellationToken)!.ToString();
             try
             {
+#if NET9_0_OR_GREATER
+                options = JsonSerializer.Deserialize(optionsJson, GeneratorOptionsSerializerContext.Default.GeneratorOptions)!;
+#else
                 options = JsonSerializer.Deserialize<GeneratorOptions>(optionsJson, JsonOptions);
+#endif
             }
             catch (JsonException ex)
             {
@@ -400,7 +407,7 @@ public class SourceGenerator : ISourceGenerator
             return Array.Empty<string>();
         }
 
-        return delimitedAppLocalLibraryPaths.Split('|').Select(Path.GetFileName);
+        return delimitedAppLocalLibraryPaths?.Split('|').Select(x => Path.GetFileName(x)!) ?? Array.Empty<string>();
     }
 
     private static Docs? ParseDocs(GeneratorExecutionContext context)
@@ -431,4 +438,13 @@ public class SourceGenerator : ISourceGenerator
 
         return docs;
     }
+
+#if NET9_0_OR_GREATER
+    [JsonSourceGenerationOptions(
+        AllowTrailingCommas = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+    [JsonSerializable(typeof(GeneratorOptions))]
+    private partial class GeneratorOptionsSerializerContext : JsonSerializerContext;
+#endif
 }
