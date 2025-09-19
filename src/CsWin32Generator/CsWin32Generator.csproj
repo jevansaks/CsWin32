@@ -10,7 +10,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Microsoft.Windows.CsWin32\Microsoft.Windows.CsWin32.csproj" />
-    <PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Common" />
   </ItemGroup>
 
 </Project>

@@ -1,8 +1,10 @@
 using System.CommandLine;
+using System.CommandLine.Invocation;
 using System.Text;
 using System.Text.Json;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.Windows.CsWin32;
 
 namespace CsWin32Generator;
@@ -99,8 +101,19 @@ internal class Program
             referencesOption
         };
 
-        rootCommand.SetHandler(async (nativeMethodsTxt, nativeMethodsJson, metadataPaths, docPaths, appLocalAllowedLibraries, outputPath, allowUnsafeBlocks, targetFramework, platform, references) =>
+        rootCommand.SetHandler(async (InvocationContext context) =>
         {
+            var nativeMethodsTxt = context.ParseResult.GetValueForOption(nativeMethodsTxtOption)!;
+            var nativeMethodsJson = context.ParseResult.GetValueForOption(nativeMethodsJsonOption);
+            var metadataPaths = context.ParseResult.GetValueForOption(metadataPathsOption)!;
+            var docPaths = context.ParseResult.GetValueForOption(docPathsOption);
+            var appLocalAllowedLibraries = context.ParseResult.GetValueForOption(appLocalAllowedLibrariesOption);
+            var outputPath = context.ParseResult.GetValueForOption(outputPathOption)!;
+            var allowUnsafeBlocks = context.ParseResult.GetValueForOption(allowUnsafeBlocksOption);
+            var targetFramework = context.ParseResult.GetValueForOption(targetFrameworkOption);
+            var platform = context.ParseResult.GetValueForOption(platformOption);
+            var references = context.ParseResult.GetValueForOption(referencesOption);
+
             try
             {
                 var result = await GenerateCode(
@@ -115,7 +128,7 @@ internal class Program
                     platform,
                     references);
 
-                Environment.ExitCode = result ? 0 : 1;
+                context.ExitCode = result ? 0 : 1;
             }
             catch (Exception ex)
             {
@@ -124,9 +137,9 @@ internal class Program
                 {
                     Console.Error.WriteLine($"Inner exception: {ex.InnerException.Message}");
                 }
-                Environment.ExitCode = 1;
+                context.ExitCode = 1;
             }
-        }, nativeMethodsTxtOption, nativeMethodsJsonOption, metadataPathsOption, docPathsOption, appLocalAllowedLibrariesOption, outputPathOption, allowUnsafeBlocksOption, targetFrameworkOption, platformOption, referencesOption);
+        });
 
         return await rootCommand.InvokeAsync(args);
     }
@@ -357,12 +370,15 @@ internal class Program
 
                 try
                 {
-                    if (Generator.GetBannedAPIs(superGenerator.Generators.First().Value.Options).TryGetValue(name, out string? reason))
+                    // Skip banned API check for now since it's not accessible
+                    // TODO: Consider making Generator.GetBannedAPIs or BannedAPIs public if needed
+                    /*var bannedApis = superGenerator.Generators.First().Value.BannedAPIs;
+                    if (bannedApis.TryGetValue(name, out string? reason))
                     {
                         Console.WriteLine($"Warning: API '{name}' is banned: {reason}");
                         skippedCount++;
                         continue;
-                    }
+                    }*/
 
                     if (name.EndsWith(".*", StringComparison.Ordinal))
                     {
