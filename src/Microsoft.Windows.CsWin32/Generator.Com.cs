@@ -855,6 +855,10 @@ public partial class Generator
         int inheritedMethods = allMethods.Count;
         allMethods.AddRange(typeDef.GetMethods().Select(methodHandle => new QualifiedMethodDefinitionHandle(this, methodHandle)));
 
+        // Source-generated COM and built-in COM on .NET 5+ do not support InterfaceIsIInspectable.
+        // Instead, generate IInspectable's three methods explicitly (inherited for source-generated COM,
+        // redeclared for built-in COM). InterfaceIsIUnknown supplies slots 0-2; those methods occupy
+        // slots 3-5, preserving the native layout before any derived-interface methods.
         AttributeSyntax ifaceType = InterfaceType(
             foundIInspectable ? ComInterfaceType.InterfaceIsIUnknown :
             foundIDispatch ? (this.GenerateIDispatch ? ComInterfaceType.InterfaceIsIUnknown : (allMethods.Count == 0 ? ComInterfaceType.InterfaceIsIDispatch : ComInterfaceType.InterfaceIsDual)) :
